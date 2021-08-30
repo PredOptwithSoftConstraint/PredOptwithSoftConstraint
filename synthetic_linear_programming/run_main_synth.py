@@ -11,8 +11,8 @@ from torch.optim import Adam, SGD, RMSprop, Adagrad, Adadelta, Adamax
 import torch.nn as nn
 from tqdm import tqdm
 from synthesize import lowRankSynthesize,generateProblemParams
+from DF import getopt_DF
 from sklearn.metrics import mean_squared_error, mean_absolute_error, median_absolute_error
-
 
 # adaptors to calc.py
 def getopt_adapt(theta, alpha, A, b, C, d):
@@ -77,36 +77,35 @@ class PerfCompare:
         # print('mae',mae, 'mse',mse, 'meae',meae,'avg_optval',avg_optval, 'avg_val',avg_val, 'avg_reg',avg_reg)
         return {'mae':mae, 'mse':mse, 'meae':meae,'avg_optval':avg_optval, 'avg_val':avg_val, 'avg_reg':avg_reg}
 
-
 def parse():
     parser = argparse.ArgumentParser(description="LPSoft-Syn")
     parser.add_argument("-d", "--directory", type=str, default='./', 
                         help="working directory")
-    parser.add_argument("--seed", type=int, default=146350,
+    parser.add_argument("--seed", type=int, default=146358,
                         help='random seed')                         
-    parser.add_argument("--method", type=int, default=1, 
-                        help='0=two-stage, 1=softLP, 2=SPO+')
+    parser.add_argument("--method", type=int, default=3,
+                        help='0=two-stage, 1=softLP, 2=SPO+, 3=DF')
     parser.add_argument("--num_two_stage_pretrain", type=int, default=40,
                         help='two-stage pretrain epoches')  
     parser.add_argument("--num_soft_training", type=int, default=40,
                         help='soft training epoches')
-    parser.add_argument("--num_samples", type=int, default=1500,         # 150, 1500, 7500 train: 100, 1000, 5000 batch_size: 10, 50, 125 
+    parser.add_argument("--num_samples", type=int, default=150, # 150, 1500, 7500 train: 100, 1000, 5000 batch_size: 10, 50, 125
                         help="number of samples for predication")
     parser.add_argument("--dim_features", type=int, default=250,
                         help="dimension of features")
     parser.add_argument("--dim_latent", type=int, default=20,
                         help="dimension of latent var")
-    parser.add_argument("--dim_context", type=int, default=150,
+    parser.add_argument("--dim_context", type=int, default=2,
                         help="dimension of context (predication var)")
-    parser.add_argument('--dim_decisions', type=int, default=150,
+    parser.add_argument('--dim_decisions', type=int, default=2,
                         help="the number of decision vars")
-    parser.add_argument('--dim_hard', type=int, default=120,
+    parser.add_argument('--dim_hard', type=int, default=10,
                         help="the number of hard limits")
-    parser.add_argument('--dim_soft', type=int, default=30,
+    parser.add_argument('--dim_soft', type=int, default=1,
                         help="the number of (buyable) materials")               
     parser.add_argument("--loss", type=str, default='l1', 
                         help="loss function for prediction model")
-    parser.add_argument("--batch_size", type=int, default=50,
+    parser.add_argument("--batch_size", type=int, default=10,
                         help="batch size of training")
     parser.add_argument("--max_norm", type=float, default=0.0001, 
                         help="max norm of grad")
@@ -150,6 +149,8 @@ def main(args):
         training_method = 'soft-constraint'
     elif args.method == 2:
         training_method = 'SPO+'
+    elif args.method == 3:
+        training_method = 'DF'
     else:
         raise ValueError('Not implemented methods')
     # reset seed
@@ -168,14 +169,15 @@ def main(args):
                + "_size_" + str(args.dim_context) + "_" + str(args.dim_soft) + "_bs_" + str(args.batch_size) + "seed"+str(args.seed)+"loss"+str(args.loss)+"K"+str(args.K)+"test.txt",
                "w")
     des3 = open("result/"+training_method+"_size_"+str(args.dim_context)+"_"+str(args.dim_soft)+"_bs_"+str(args.batch_size)+"seed"+str(args.seed)+"loss"+str(args.loss)+"K"+str(args.K)+"valid.txt","w")
-    verb = open("result/"+training_method+"_size_"+str(args.dim_context)+"_"+str(args.dim_soft)+"_bs_"+str(args.batch_size)+"seed"+str(args.seed)+"loss"+str(args.loss)+"K"+str(args.K)+"verbose.txt","w")
-    verb2 = open("result/"+training_method+"_size_"+str(args.dim_context)+"_"+str(args.dim_soft)+"_bs_"+str(args.batch_size)+"seed"+str(args.seed)+"loss"+str(args.loss)+"K"+str(args.K)+"verbose_test.txt","w")
-    verb3 = open("result/"+training_method+"_size_"+str(args.dim_context)+"_"+str(args.dim_soft)+"_bs_"+str(args.batch_size)+"seed"+str(args.seed)+"loss"+str(args.loss)+"K"+str(args.K)+"verbose_valid.txt","w")
+    verb = None #open("result/"+training_method+"_size_"+str(args.dim_context)+"_"+str(args.dim_soft)+"_bs_"+str(args.batch_size)+"seed"+str(args.seed)+"loss"+str(args.loss)+"K"+str(args.K)+"verbose.txt","w")
+    verb2 = None #open("result/"+training_method+"_size_"+str(args.dim_context)+"_"+str(args.dim_soft)+"_bs_"+str(args.batch_size)+"seed"+str(args.seed)+"loss"+str(args.loss)+"K"+str(args.K)+"verbose_test.txt","w")
+    verb3 = None #open("result/"+training_method+"_size_"+str(args.dim_context)+"_"+str(args.dim_soft)+"_bs_"+str(args.batch_size)+"seed"+str(args.seed)+"loss"+str(args.loss)+"K"+str(args.K)+"verbose_valid.txt","w")
     batch_size = args.batch_size
     max_norm = args.max_norm
- 
+
     resetbuffer()
     repeat, will_eval = False, True
+    print("theta_train:", theta_train)
     # two stage
     if training_method == "two-stage":
         fn_loss = nn.L1Loss() if args.loss=='l1' else nn.MSELoss()
@@ -277,6 +279,7 @@ def main(args):
                     if len(valid_lst) >= 8:
                         early_stopping(valid_lst)
                     #print("epoch {epoch},  batch {batch},  test perf: ".format(epoch=i, batch=bidx), results)
+
     elif training_method == "SPO+":
         # build new constraints
 
@@ -339,7 +342,64 @@ def main(args):
                     valid_lst.append(results_valid['avg_reg'])
                     if len(valid_lst) >= 8:
                         early_stopping(valid_lst)
-                    # print("epoch {epoc h},  batch {batch},  test perf: ".format(epoch=i, batch=bidx), results)
+                    # print("epoch {epoch},  batch {batch},  test perf: ".format(epoch=i, batch=bidx), results)
+
+    # DF
+    elif training_method == "DF":
+        # train loop on all samples
+
+        for i in tqdm(range(args.num_soft_training)):
+            if repeat:
+                indices = np.array([i for i in range(xi_train.shape[0])])
+            else:
+                indices = np.random.permutation(xi_train.shape[0])  # shuffle
+            batches = math.ceil(indices.shape[0] / batch_size)
+            for bidx in range(batches):
+                # train
+                ## get batch data
+                bs = min(batch_size, indices.shape[0] - batch_size * bidx)
+                st = 0 if repeat else bidx
+                idx = indices[batch_size * st:  batch_size * st + bs]
+                # print("idx:",idx)
+                xi_batch = xi_train[idx]
+                theta_batch = theta_train[idx]
+
+                ## predict
+                theta_batch_pred = prednet(torch.from_numpy(xi_batch).to(device))
+                # print("pred:", theta_batch_pred)
+                ## solve the programming problems
+                loss = torch.zeros(1).to(device)
+                for j in range(bs):
+                    # keep theta_batch_pred as torch.tensor
+                    val, grd = getopt_DF(theta_batch[j], theta_batch_pred[j],
+                                                  alpha0, A0, b0, C0, d0)
+                    loss += -grd.view(1)
+                loss /= bs  # mean
+
+                ## update grads
+                optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(prednet.parameters(), max_norm)  # 0.001
+                optimizer.step()
+
+                ## dump trainning perf comparison
+                results = pc.compare(theta_batch_pred.detach().cpu().numpy(), theta_batch, des, verb)
+                # print("epoch {epoch},  batch {batch},  train perf: ".format(epoch=i, batch=bidx), results)
+
+                # test
+                ## evaluate on test dataset
+                # print("alpha:", alpha0)
+                ## dump test perf comparison
+                if will_eval and bidx % batches == batches - 1:
+                    theta_test_pred = prednet(torch.from_numpy(xi_test).to(device))
+                    theta_valid_pred = prednet(torch.from_numpy(xi_valid).to(device))
+                    results_test = pc.compare(theta_test_pred.detach().cpu().numpy(), theta_test, des2, verb2)
+                    results_valid = pc.compare(theta_valid_pred.detach().cpu().numpy(), theta_valid, des3, verb3)
+                    valid_lst.append(results_valid['avg_reg'])
+                    if len(valid_lst) >= 8:
+                        early_stopping(valid_lst)
+                    # print("epoch {epoch},  batch {batch},  test perf: ".format(epoch=i, batch=bidx), results)
+
 if __name__ == "__main__":
     """ solve synthetic problems
     """
