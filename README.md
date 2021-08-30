@@ -1,5 +1,7 @@
 This repository is the code for NeurIPS 2021 submission "A Surrogate Objective Framework for Prediction+Programming with Soft Constraints".
 
+Edit 2021/8/30: KKT-based (Decision-focused) baseline is added to the first experiment.
+
 # Requirements
 pytorch>=1.7.0
 
@@ -41,6 +43,7 @@ The four methods (L1,L2,SPO+,ours) we used in the experiment are respectively
 --method=0 --loss=l2 # L2
 --method=1 --loss=l1 # SPO+
 --method=2 --loss=l1 # ours
+--method=3 --loss=l1 # decision-focused (KKT-based)
 ```
 The other parameters can be seen in run_script.py and run_main_synth.py. To get multiple data for a single method, modify with the parameters listed above, and then run run_script.py. The outcome containing prediction error and regret is in the result folder. See dataprocess.py for a reference on how to interpret the data; the data with suffix "...test.txt" is used for evaluation.
 
