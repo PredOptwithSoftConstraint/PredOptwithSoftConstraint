@@ -45,7 +45,7 @@ The four methods (L1,L2,SPO+,ours) we used in the experiment are respectively
 --method=2 --loss=l1 # ours
 --method=3 --loss=l1 # decision-focused (KKT-based)
 ```
-The other parameters can be seen in run_script.py and run_main_synth.py. To get multiple data for a single method, modify with the parameters listed above, and then run run_script.py. The outcome containing prediction error and regret is in the result folder. See dataprocess.py for a reference on how to interpret the data; the data with suffix "...test.txt" is used for evaluation.
+The other parameters can be seen in run_script.py and run_main_synth.py. To get multiple data for a single method, modify with the parameters listed above, and then run run_script.py. The outcome containing prediction error and regret is in the result folder. See dataprocess.py for a reference on how to interpret the data; the data with suffix "...test.txt" is used for evaluation. Also, to change batch size and training set size, alter the default parameters in run_main_synth.py.
 
 ## Portfolio Optimization
 The dataset for this problem will be automatically downloaded when you first run this code, as Wilder et al.'s code does[1]. It is the daily price data of SP500 from 2004 to 2017 downloaded by Quandl API. To run a single problem instance, type the following command:
